@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scrollytelling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#fff;--bg:#16200f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink)}
+#st{position:fixed;inset:0;overflow:hidden}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#sh{position:absolute;inset:0;opacity:0;background:linear-gradient(90deg,rgba(14,22,10,.5) 0%,rgba(14,22,10,.34) 38%,rgba(14,22,10,0) 70%)}
+#tx{position:absolute;left:clamp(24px,5vw,64px);top:clamp(44px,10vh,104px);max-width:min(88vw,620px)}
+#tx i{display:block;width:44px;height:4px;background:#fff;margin-bottom:22px;opacity:0}
+#tx h2{margin:0;font-weight:800;font-size:clamp(36px,5.4vw,64px);line-height:1.02;letter-spacing:-.01em;text-transform:uppercase;opacity:0;text-shadow:0 2px 22px rgba(0,0,0,.3)}
+#tx p{margin:20px 0 0;font-weight:400;font-size:16px;line-height:1.45;opacity:0;text-shadow:0 1px 14px rgba(0,0,0,.45)}
+#lab{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;filter:drop-shadow(0 1px 6px rgba(0,0,0,.45))}
+#lab text{font:600 26px Inter,system-ui,sans-serif;fill:#fff}
+#lab path,#lab circle{fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+#hint{position:absolute;left:0;right:0;bottom:calc(28px + env(safe-area-inset-bottom,0px));text-align:center;font-weight:500;font-size:12px;letter-spacing:.04em}
+#hint b{display:block;width:1px;height:34px;margin:10px auto 0;background:#fff;animation:p 1.8s ease-in-out infinite}
+@keyframes p{0%,100%{transform:scaleY(.3);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}}
+#ld{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;font-weight:500;font-size:12px;letter-spacing:.06em;transition:opacity .6s;z-index:5}
+@media(max-width:700px){#sh{background:linear-gradient(90deg,rgba(14,22,10,.58) 0%,rgba(14,22,10,.4) 60%,rgba(14,22,10,.1) 100%)}}
+@media(prefers-reduced-motion:reduce){#hint b{animation:none}}
+</style>
+</head>
+<body>
+<div id="sp"></div>
+<div id="st">
+  <canvas id="cv"></canvas>
+  <div id="sh"></div>
+  <svg id="lab" viewBox="0 0 1672 941" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <g id="l1" opacity="0"><text x="1240" y="268">San Lorenzo Chico</text><path pathLength="1" stroke-dasharray="1" d="M1240 283H1500L1554 333"/><circle cx="1554" cy="333" r="8"/></g>
+    <g id="l2" opacity="0"><text x="1101" y="704">Río Arenales</text><path pathLength="1" stroke-dasharray="1" d="M1259 718H1050L944 820"/><circle cx="944" cy="820" r="8"/></g>
+  </svg>
+  <div id="tx"><i></i><h2></h2><p></p></div>
+  <div id="hint">Deslizá para explorar<b></b></div>
+</div>
+<div id="ld">CARGANDO</div>
+<script>
+// ===== CONTENIDO =====
+const TXT=[
+ ['EL ENTORNO<br>NATURAL','Un nuevo desarrollo residencial<br>conectado al paisaje, la ciudad<br>y las principales vías de acceso.'],
+ ['EL TERRENO<br>DEL PROYECTO','Un predio de gran escala<br>con potencial para desarrollar<br>un barrio planificado y sustentable.'],
+ ['EL PROYECTO<br>MASTERPLAN','Un barrio residencial<br>que combina naturaleza,<br>conectividad y calidad de vida.'],
+ ['EL BOULEVARD<br>PRINCIPAL','El corazón del barrio, con<br>un diseño paisajístico que<br>integra circulación, sombra<br>y espacios de encuentro.']];
+// i: imagen fija · v: video (a→b) · t: texto · lab: indicaciones · len: largo del tramo (en alto de pantalla ×100)
+const S=[
+ {i:0,len:80},
+ {i:0,len:170,t:0},
+ {i:0,len:150,lab:1},
+ {v:0,a:0,b:1,len:90},
+ {i:1,len:170,t:1},
+ {v:1,a:1,b:2,len:90},
+ {i:2,len:170,t:2},
+ {v:2,a:2,b:3,len:90},
+ {i:3,len:170,t:3,fin:1}];
+const NF=121, MAXSTEP=3.2; // MAXSTEP: velocidad máxima (por frame) para que un scroll rápido no se saltee imágenes
+
+// ===== CARGA =====
+const $=s=>document.querySelector(s), cv=$('#cv'), ctx=cv.getContext('2d');
+const IM=[1,2,3,4].map(n=>{const m=new Image();m.src='img/'+n+'.webp';return m});
+const FR=[1,2,3].map(v=>Array.from({length:NF},(_,k)=>{const m=new Image();m.decoding='async';m.src=`frames/v${v}/${String(k+1).padStart(3,'0')}.webp`;return m}));
+let st=0;S.forEach(s=>{s.st=st;st+=s.len});
+const sp=$('#sp'),tx=$('#tx'),h2=$('#tx h2'),pp=$('#tx p'),dash=$('#tx i'),sh=$('#sh');
+let cw,ch,uh,cur=0,last=-1,lastT=-1;
+function size(){const d=Math.min(devicePixelRatio||1,1.75);uh=innerHeight/100;cw=cv.width=Math.round(innerWidth*d);ch=cv.height=Math.round(innerHeight*d);sp.style.height=(st+100)*uh+'px';last=-1}
+addEventListener('resize',size);size();
+const ok=m=>m&&m.complete&&m.naturalWidth;
+const cover=(m,a=1)=>{if(!ok(m))return;const k=Math.max(cw/m.naturalWidth,ch/m.naturalHeight),w=m.naturalWidth*k,h=m.naturalHeight*k;ctx.globalAlpha=a;ctx.drawImage(m,(cw-w)/2,(ch-h)/2,w,h);ctx.globalAlpha=1};
+const sm=(a,b,x)=>Math.min(1,Math.max(0,(x-a)/(b-a)));
+Promise.all(IM.map(m=>m.decode().catch(()=>{}))).then(()=>{$('#ld').style.opacity=0;setTimeout(()=>$('#ld').remove(),700)});
+
+// ===== LOOP =====
+function frame(){
+  const pos=scrollY/uh, d=pos-cur;
+  cur+=Math.max(-MAXSTEP,Math.min(MAXSTEP,d*.14)); if(Math.abs(pos-cur)<.01)cur=pos;
+  if(cur!==last){last=cur;render()}
+  requestAnimationFrame(frame);
+}
+function render(){
+  let s=S[S.length-1];for(const q of S){if(cur<q.st+q.len){s=q;break}}
+  const p=sm(0,1,(cur-s.st)/s.len);
+  ctx.clearRect(0,0,cw,ch);
+  if(s.v!=null){
+    let k=Math.round(p*(NF-1));while(k>0&&!ok(FR[s.v][k]))k--;
+    cover(FR[s.v][k]);
+    if(p<.06)cover(IM[s.a],1-p/.06); else if(p>.94)cover(IM[s.b],(p-.94)/.06);
+  }else cover(IM[s.i]);
+  // texto en dos tiempos: primero el título, y con un poco más de scroll la descripción
+  const out=s.fin?1:1-sm(.86,.98,p);
+  let tA=0,dA=0;
+  if(s.t!=null){
+    if(lastT!==s.t){lastT=s.t;h2.innerHTML=TXT[s.t][0];pp.innerHTML=TXT[s.t][1]}
+    tA=sm(.04,.2,p)*out; dA=sm(.4,.58,p)*out;
+  }
+  dash.style.opacity=h2.style.opacity=tA; h2.style.transform=`translateY(${(1-tA)*14}px)`;
+  pp.style.opacity=dA; pp.style.transform=`translateY(${(1-dA)*14}px)`;
+  sh.style.opacity=Math.max(tA,dA);
+  // indicaciones
+  const la=s.lab?sm(.08,.26,p)*out:0, lb=s.lab?sm(.3,.5,p)*out:0;
+  for(const [id,a] of [['l1',la],['l2',lb]]){const g=$('#'+id);g.setAttribute('opacity',a>0?1:0);g.querySelector('path').style.strokeDashoffset=1-a;g.querySelector('circle').style.opacity=a;g.querySelector('text').style.opacity=sm(.4,1,a)}
+  $('#hint').style.opacity=1-sm(2,10,cur);
+}
+frame();
+</script>
+</body>
+</html>
